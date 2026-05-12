@@ -18,13 +18,13 @@ En términos prácticos, este repositorio reduce el trabajo manual de seguimient
 
 ## Estado operativo
 
-- Última corrida registrada/documentada: `2026-05-12 18:58:04 -04:00`.
-- Snapshot actual del universo ONPE: `92,654` mesas procesadas y `112` mesas pendientes sobre `92,766` mesas totales publicadas.
-- Avance actual del snapshot: `99.88%` (`mesas procesadas / total de mesas publicadas`).
-- Al momento de esa corrida quedan `112` mesas en `source_data/MesasFaltantes.txt`.
+- Última corrida registrada/documentada: `2026-05-12 19:05:24 -04:00`.
+- Snapshot actual del universo ONPE: `92,549` mesas procesadas y `217` mesas pendientes sobre `92,766` mesas totales publicadas.
+- Avance actual del snapshot: `99.77%` (`mesas procesadas / total de mesas publicadas`).
+- Al momento de esa corrida quedan `217` mesas en `source_data/MesasFaltantes.txt`.
 - El usuario puede volver a correr el script para descargar las mesas restantes que sigan pendientes en esa lista.
 - Los archivos de `output` pueden consumirse directamente desde Excel, Power BI u otras herramientas de análisis de datos.
-- En la corrida más reciente se detectaron `106` mesas nuevas que pasaron a `Contabilizada` y fueron removidas de `MesasFaltantes.txt`.
+- En la corrida más reciente hubo una variación neta de `+105` mesas pendientes en `MesasFaltantes.txt`.
 
 ## Estado actual
 
