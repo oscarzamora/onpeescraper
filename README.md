@@ -18,13 +18,13 @@ En términos prácticos, este repositorio reduce el trabajo manual de seguimient
 
 ## Estado operativo
 
-- Última corrida registrada/documentada: `2026-05-11 21:12:39 -04:00`.
-- Snapshot actual del universo ONPE: `92,526` mesas procesadas y `240` mesas pendientes sobre `92,766` mesas totales publicadas.
-- Avance actual del snapshot: `99.74%` (`mesas procesadas / total de mesas publicadas`).
-- Al momento de esa corrida quedan `240` mesas en `source_data/MesasFaltantes.txt`.
+- Última corrida registrada/documentada: `2026-05-12 08:50:44 -04:00`.
+- Snapshot actual del universo ONPE: `92,548` mesas procesadas y `218` mesas pendientes sobre `92,766` mesas totales publicadas.
+- Avance actual del snapshot: `99.76%` (`mesas procesadas / total de mesas publicadas`).
+- Al momento de esa corrida quedan `218` mesas en `source_data/MesasFaltantes.txt`.
 - El usuario puede volver a correr el script para descargar las mesas restantes que sigan pendientes en esa lista.
 - Los archivos de `output` pueden consumirse directamente desde Excel, Power BI u otras herramientas de análisis de datos.
-- En la validación más reciente se detectaron `7` mesas nuevas que pasaron a `Contabilizada` y fueron removidas de `MesasFaltantes.txt`: `011836`, `011856`, `069992`, `070083`, `070604`, `070659`, `070739`.
+- En la corrida más reciente se detectaron `22` mesas nuevas que pasaron a `Contabilizada` y fueron removidas de `MesasFaltantes.txt`.
 
 ## Estado actual
 
@@ -89,6 +89,66 @@ Tabla de detalle por mesa y agrupación. Una mesa puede tener muchas filas, una 
 
 `votos` es el único dataset de detalle (many) porque almacena múltiples filas por mesa, una por agrupación/candidato. Por eso su llave es compuesta (`codigo_mesa`, `partido_id`).
 
+## ERD de referencia
+
+El siguiente ERD es una referencia lógica del modelo objetivo. Sirve para documentar la relación esperada entre agrupaciones, candidatos, votos, mesas y ubigeo.
+
+```text
+				┌──────────────────────┐
+				│     agrupaciones     │
+				│──────────────────────│
+				│ PK: partido_id       │
+				│ nombre_agrupacion    │
+				│ sigla                │
+				└───────────┬──────────┘
+							│ 1:N
+							│
+				┌───────────▼──────────┐
+				│      candidato       │
+				│──────────────────────│
+				│ PK: candidato_id     │
+				│ nombre_candidato     │
+				│ FK: partido_id       │
+				└───────────┬──────────┘
+							│ 1:N
+							│
+				┌───────────▼──────────┐
+				│        votos         │
+				│──────────────────────│
+				│ PK: codigo_mesa      │
+				│ PK: candidato_id     │
+				│ votos                │
+				│ FK: codigo_mesa      │
+				│ FK: candidato_id     │
+				└───────────┬──────────┘
+							│ N:1
+							│
+				┌───────────▼──────────┐
+				│     mesas_data       │
+				│──────────────────────│
+				│ PK: codigo_mesa      │
+				│ ubigeo               │
+				│ departamento         │
+				│ provincia            │
+				│ distrito             │
+				│ localidad            │
+				└───────────┬──────────┘
+							│ N:1
+							│
+				┌───────────▼──────────┐
+				│        ubigeo        │
+				│──────────────────────│
+				│ PK: Ubigeo           │
+				│ Departamento         │
+				│ Provincia            │
+				│ Distrito             │
+				│ Latitud              │
+				│ Longitud             │
+				└──────────────────────┘
+```
+
+Nota: este ERD amplía el esquema actual de salida para dejar documentado el modelo deseado de análisis. El scraper vigente sigue generando los archivos tabulados descritos arriba.
+
 ## Archivos de entrada
 
 - `source_data/todas_las_mesas.txt`: listado maestro de mesas ONPE (referencia completa).
@@ -98,6 +158,12 @@ Tabla de detalle por mesa y agrupación. Una mesa puede tener muchas filas, una 
 
 Nota: al finalizar una corrida, el script actualiza `MesasFaltantes.txt` con las mesas cuyo `estado_acta` siga siendo distinto de `Contabilizada`.
 Nota: `candidato.txt` no se genera automáticamente; su mantenimiento es manual.
+
+## Guía para Excel analítico
+
+Si quieres construir un Excel analítico conectado a estos datos, revisa la guía dedicada: [README_EXCEL_ANALYTICS.md](README_EXCEL_ANALYTICS.md).
+
+La guía explica cómo consumir los archivos desde GitHub RAW, modelarlos en Power Query y construir relaciones, medidas DAX, drill-down y mapas.
 
 ### Columnas e interpretación de entrada
 
