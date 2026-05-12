@@ -18,13 +18,13 @@ En términos prácticos, este repositorio reduce el trabajo manual de seguimient
 
 ## Estado operativo
 
-- Última corrida registrada/documentada: `2026-05-12 08:50:44 -04:00`.
-- Snapshot actual del universo ONPE: `92,548` mesas procesadas y `218` mesas pendientes sobre `92,766` mesas totales publicadas.
-- Avance actual del snapshot: `99.76%` (`mesas procesadas / total de mesas publicadas`).
-- Al momento de esa corrida quedan `218` mesas en `source_data/MesasFaltantes.txt`.
+- Última corrida registrada/documentada: `2026-05-12 18:58:04 -04:00`.
+- Snapshot actual del universo ONPE: `92,654` mesas procesadas y `112` mesas pendientes sobre `92,766` mesas totales publicadas.
+- Avance actual del snapshot: `99.88%` (`mesas procesadas / total de mesas publicadas`).
+- Al momento de esa corrida quedan `112` mesas en `source_data/MesasFaltantes.txt`.
 - El usuario puede volver a correr el script para descargar las mesas restantes que sigan pendientes en esa lista.
 - Los archivos de `output` pueden consumirse directamente desde Excel, Power BI u otras herramientas de análisis de datos.
-- En la corrida más reciente se detectaron `22` mesas nuevas que pasaron a `Contabilizada` y fueron removidas de `MesasFaltantes.txt`.
+- En la corrida más reciente se detectaron `106` mesas nuevas que pasaron a `Contabilizada` y fueron removidas de `MesasFaltantes.txt`.
 
 ## Estado actual
 
@@ -44,37 +44,31 @@ Los archivos de `output` están delimitados por tabulaciones y se relacionan por
 
 Dimensión de partidos o agrupaciones detectadas en la extracción.
 
-| Columna | Interpretación |
-| --- | --- |
-| `partido_id` | Identificador único de la agrupación o partido en la publicación de ONPE. Es la llave de esta tabla. |
-| `nombre` | Nombre textual de la agrupación o partido. |
+- `partido_id`: identificador único de la agrupación o partido (llave de la tabla).
+- `nombre`: nombre textual de la agrupación o partido.
 
 #### `output/mesas_data.txt`
 
 Tabla principal a nivel de mesa. Una fila representa una mesa consultada en ONPE.
 
-| Columna | Interpretación |
-| --- | --- |
-| `codigo_mesa` | Identificador único de la mesa. Es la llave de esta tabla. |
-| `ubigeo` | Código ubigeo asociado a la mesa según la respuesta de ONPE. |
-| `local_votacion` | Nombre del local de votación donde pertenece la mesa. |
-| `electores_habiles` | Total de electores habilitados para votar en la mesa. |
-| `votos_emitidos` | Total de votos emitidos registrados para la mesa. |
-| `votos_validos` | Total de votos válidos registrados para la mesa. |
-| `blancos` | Total de votos en blanco registrados para la mesa. |
-| `nulos` | Total de votos nulos registrados para la mesa. |
-| `impugnados` | Total de votos impugnados registrados para la mesa. |
-| `estado_acta` | Estado publicado por ONPE para esa acta. Este campo gobierna si la mesa sale de `MesasFaltantes.txt` o permanece pendiente. |
+- `codigo_mesa`: identificador único de la mesa (llave de la tabla).
+- `ubigeo`: código ubigeo asociado a la mesa.
+- `local_votacion`: local de votación asociado a la mesa.
+- `electores_habiles`: total de electores habilitados.
+- `votos_emitidos`: total de votos emitidos.
+- `votos_validos`: total de votos válidos.
+- `blancos`: total de votos en blanco.
+- `nulos`: total de votos nulos.
+- `impugnados`: total de votos impugnados.
+- `estado_acta`: estado publicado por ONPE; define si la mesa sale de `MesasFaltantes.txt`.
 
 #### `output/votos.txt`
 
 Tabla de detalle por mesa y agrupación. Una mesa puede tener muchas filas, una por partido o agrupación.
 
-| Columna | Interpretación |
-| --- | --- |
-| `codigo_mesa` | Código de mesa al que pertenece la fila de detalle. |
-| `partido_id` | Identificador de la agrupación o partido al que se le atribuyen los votos en esa mesa. |
-| `votos` | Cantidad de votos obtenidos por esa agrupación en esa mesa. |
+- `codigo_mesa`: mesa a la que pertenece la fila de detalle.
+- `partido_id`: agrupación o partido al que se atribuyen los votos.
+- `votos`: cantidad de votos obtenidos por la agrupación en esa mesa.
 
 ### Llaves por dataset
 
@@ -91,63 +85,14 @@ Tabla de detalle por mesa y agrupación. Una mesa puede tener muchas filas, una 
 
 ## ERD de referencia
 
-El siguiente ERD es una referencia lógica del modelo objetivo. Sirve para documentar la relación esperada entre agrupaciones, candidatos, votos, mesas y ubigeo.
+Modelo lógico resumido para análisis:
 
-```text
-				┌──────────────────────┐
-				│     agrupaciones     │
-				│──────────────────────│
-				│ PK: partido_id       │
-				│ nombre_agrupacion    │
-				│ sigla                │
-				└───────────┬──────────┘
-							│ 1:N
-							│
-				┌───────────▼──────────┐
-				│      candidato       │
-				│──────────────────────│
-				│ PK: candidato_id     │
-				│ nombre_candidato     │
-				│ FK: partido_id       │
-				└───────────┬──────────┘
-							│ 1:N
-							│
-				┌───────────▼──────────┐
-				│        votos         │
-				│──────────────────────│
-				│ PK: codigo_mesa      │
-				│ PK: candidato_id     │
-				│ votos                │
-				│ FK: codigo_mesa      │
-				│ FK: candidato_id     │
-				└───────────┬──────────┘
-							│ N:1
-							│
-				┌───────────▼──────────┐
-				│     mesas_data       │
-				│──────────────────────│
-				│ PK: codigo_mesa      │
-				│ ubigeo               │
-				│ departamento         │
-				│ provincia            │
-				│ distrito             │
-				│ localidad            │
-				└───────────┬──────────┘
-							│ N:1
-							│
-				┌───────────▼──────────┐
-				│        ubigeo        │
-				│──────────────────────│
-				│ PK: Ubigeo           │
-				│ Departamento         │
-				│ Provincia            │
-				│ Distrito             │
-				│ Latitud              │
-				│ Longitud             │
-				└──────────────────────┘
-```
+- `mesas_data` (1) -> `votos` (N) por `codigo_mesa`.
+- `agrupaciones` (1) -> `votos` (N) por `partido_id`.
+- `candidato` es una dimensión opcional manual (`source_data/candidato.txt`) para enriquecer por persona.
+- `ubigeo` es una dimensión externa (`source_data/geodir-ubigeo-reniec.xlsx`) para análisis territorial.
 
-Nota: este ERD amplía el esquema actual de salida para dejar documentado el modelo deseado de análisis. El scraper vigente sigue generando los archivos tabulados descritos arriba.
+Nota: el scraper vigente genera solo los archivos tabulados descritos en este README; las demás dimensiones son de enriquecimiento analítico.
 
 ## Archivos de entrada
 
@@ -171,41 +116,30 @@ La guía explica cómo consumir los archivos desde GitHub RAW, modelarlos en Pow
 
 Archivo operativo de una sola columna lógica. En el archivo actual no hay encabezado: cada línea representa una mesa pendiente.
 
-| Campo lógico | Interpretación |
-| --- | --- |
-| `codigo_mesa` | Código de mesa que todavía debe consultarse o volver a consultarse en ONPE. Si la mesa sigue con estado distinto de `Contabilizada`, permanece en esta lista al final de la corrida. |
+- `codigo_mesa`: mesa pendiente por consultar o reconsultar en ONPE.
+- Si la mesa sigue con estado distinto de `Contabilizada`, permanece en esta lista al final de la corrida.
 
 #### `source_data/todas_las_mesas.txt`
 
 Archivo maestro del universo publicado por ONPE. Sí contiene encabezado.
 
-| Columna | Interpretación |
-| --- | --- |
-| `codigo_mesa` | Identificador único de la mesa. Se usa como universo base para medir cobertura del snapshot y para contrastar cuántas mesas faltan por obtener. |
+- `codigo_mesa`: identificador único de mesa usado para medir cobertura del snapshot.
 
 #### `source_data/candidato.txt`
 
 Catálogo manual para enriquecer o validar la lectura de agrupaciones/candidaturas.
 
-| Columna | Interpretación |
-| --- | --- |
-| `partido_id` | Identificador del partido o agrupación. Debe corresponder con el identificador publicado por ONPE y con el `partido_id` usado en los archivos de salida. |
-| `Candidato` | Nombre del candidato asociado a ese partido. Puede estar vacío si el dato no fue completado manualmente todavía. |
+- `partido_id`: identificador del partido/agrupación alineado con la salida ONPE.
+- `Candidato`: nombre del candidato asociado (puede estar vacío).
 
 #### `source_data/geodir-ubigeo-reniec.xlsx`
 
 Catálogo geográfico complementario. Debe tratarse como tabla de referencia externa. Las columnas observadas en el archivo actual son:
 
-| Columna | Interpretación |
-| --- | --- |
-| `Ubigeo` | Código ubigeo del distrito. Sirve para relacionar la mesa con una ubicación geográfica. |
-| `Distrito` | Nombre del distrito asociado al ubigeo. |
-| `Provincia` | Nombre de la provincia asociada al ubigeo. |
-| `Departamento` | Nombre del departamento asociado al ubigeo. |
-| `Poblacion` | Población reportada para esa unidad geográfica en el archivo de referencia. |
-| `Superficie` | Superficie territorial reportada para esa unidad geográfica. |
-| `Y` | Coordenada geográfica de latitud. |
-| `X` | Coordenada geográfica de longitud. |
+- `Ubigeo`: llave territorial para relacionar mesa con geografía.
+- `Distrito`, `Provincia`, `Departamento`: niveles administrativos.
+- `Poblacion`, `Superficie`: métricas de referencia territorial.
+- `Y`, `X`: latitud y longitud.
 
 ### Origen de `geodir-ubigeo-reniec.xlsx`
 

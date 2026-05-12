@@ -27,21 +27,17 @@ Directorio completo:
 
 Archivos disponibles en `source_data`:
 
-| Archivo | Descripción |
-| --- | --- |
-| [MesasFaltantes.txt](https://github.com/oscarzamora/onpeescraper/blob/main/source_data/MesasFaltantes.txt) | Lista operativa de mesas pendientes. |
-| [candidato.txt](https://github.com/oscarzamora/onpeescraper/blob/main/source_data/candidato.txt) | Candidatos y su partido. |
-| [geodir-ubigeo-reniec.xlsx](https://github.com/oscarzamora/onpeescraper/blob/main/source_data/geodir-ubigeo-reniec.xlsx) | Ubigeo oficial con departamento, provincia, distrito, latitud y longitud. |
-| [.gitkeep](https://github.com/oscarzamora/onpeescraper/blob/main/source_data/.gitkeep) | Archivo marcador para conservar el directorio en Git. |
-| [todas_las_mesas.txt](https://github.com/oscarzamora/onpeescraper/blob/main/source_data/todas_las_mesas.txt) | Universo completo de mesas publicadas por ONPE. |
+- [MesasFaltantes.txt](https://github.com/oscarzamora/onpeescraper/blob/main/source_data/MesasFaltantes.txt): lista operativa de mesas pendientes.
+- [candidato.txt](https://github.com/oscarzamora/onpeescraper/blob/main/source_data/candidato.txt): candidatos y su partido.
+- [geodir-ubigeo-reniec.xlsx](https://github.com/oscarzamora/onpeescraper/blob/main/source_data/geodir-ubigeo-reniec.xlsx): ubigeo oficial con territorio y coordenadas.
+- [.gitkeep](https://github.com/oscarzamora/onpeescraper/blob/main/source_data/.gitkeep): archivo marcador del directorio.
+- [todas_las_mesas.txt](https://github.com/oscarzamora/onpeescraper/blob/main/source_data/todas_las_mesas.txt): universo completo de mesas publicadas por ONPE.
 
 Archivos de salida que el Excel también puede consumir desde GitHub RAW:
 
-| Archivo | Descripción |
-| --- | --- |
-| [agrupaciones.txt](https://github.com/oscarzamora/onpeescraper/blob/main/output/agrupaciones.txt) | Partidos políticos o agrupaciones detectadas. |
-| [mesas_data.txt](https://github.com/oscarzamora/onpeescraper/blob/main/output/mesas_data.txt) | Información de cada mesa: código, ubigeo, localidad y estado del acta. |
-| [votos.txt](https://github.com/oscarzamora/onpeescraper/blob/main/output/votos.txt) | Votos por mesa y candidato o agrupación. |
+- [agrupaciones.txt](https://github.com/oscarzamora/onpeescraper/blob/main/output/agrupaciones.txt): partidos o agrupaciones detectadas.
+- [mesas_data.txt](https://github.com/oscarzamora/onpeescraper/blob/main/output/mesas_data.txt): información principal por mesa.
+- [votos.txt](https://github.com/oscarzamora/onpeescraper/blob/main/output/votos.txt): votos por mesa y agrupación.
 
 Cada archivo se debe consumir desde su URL RAW. Ejemplo:
 
@@ -97,12 +93,10 @@ https://raw.githubusercontent.com/oscarzamora/onpeescraper/main/source_data/toda
 
 Crear estas relaciones:
 
-| Tabla origen | Columna | Tabla destino | Columna |
-| --- | --- | --- | --- |
-| `mesas_data` | `codigo_mesa` | `votos` | `codigo_mesa` |
-| `candidato` | `candidato_id` | `votos` | `candidato_id` |
-| `agrupaciones` | `partido_id` | `candidato` | `partido_id` |
-| `ubigeo` | `Ubigeo` | `mesas_data` | `ubigeo` |
+- `mesas_data[codigo_mesa]` -> `votos[codigo_mesa]`
+- `candidato[candidato_id]` -> `votos[candidato_id]`
+- `agrupaciones[partido_id]` -> `candidato[partido_id]`
+- `ubigeo[Ubigeo]` -> `mesas_data[ubigeo]`
 
 Notas:
 
