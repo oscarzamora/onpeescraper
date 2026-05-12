@@ -34,6 +34,61 @@ En términos prácticos, este repositorio reduce el trabajo manual de seguimient
 - Las mesas sin `data` o sin acta presidencial se omiten.
 - La salida genera tres archivos TXT delimitados por tabulaciones: `agrupaciones.txt`, `mesas_data.txt` y `votos.txt`.
 
+## Modelo de datos de output
+
+Los archivos de `output` están delimitados por tabulaciones y se relacionan por IDs con match exacto (sin transformaciones adicionales al momento de cruzar).
+
+### Columnas e interpretación de salida
+
+#### `output/agrupaciones.txt`
+
+Dimensión de partidos o agrupaciones detectadas en la extracción.
+
+| Columna | Interpretación |
+| --- | --- |
+| `partido_id` | Identificador único de la agrupación o partido en la publicación de ONPE. Es la llave de esta tabla. |
+| `nombre` | Nombre textual de la agrupación o partido. |
+
+#### `output/mesas_data.txt`
+
+Tabla principal a nivel de mesa. Una fila representa una mesa consultada en ONPE.
+
+| Columna | Interpretación |
+| --- | --- |
+| `codigo_mesa` | Identificador único de la mesa. Es la llave de esta tabla. |
+| `ubigeo` | Código ubigeo asociado a la mesa según la respuesta de ONPE. |
+| `local_votacion` | Nombre del local de votación donde pertenece la mesa. |
+| `electores_habiles` | Total de electores habilitados para votar en la mesa. |
+| `votos_emitidos` | Total de votos emitidos registrados para la mesa. |
+| `votos_validos` | Total de votos válidos registrados para la mesa. |
+| `blancos` | Total de votos en blanco registrados para la mesa. |
+| `nulos` | Total de votos nulos registrados para la mesa. |
+| `impugnados` | Total de votos impugnados registrados para la mesa. |
+| `estado_acta` | Estado publicado por ONPE para esa acta. Este campo gobierna si la mesa sale de `MesasFaltantes.txt` o permanece pendiente. |
+
+#### `output/votos.txt`
+
+Tabla de detalle por mesa y agrupación. Una mesa puede tener muchas filas, una por partido o agrupación.
+
+| Columna | Interpretación |
+| --- | --- |
+| `codigo_mesa` | Código de mesa al que pertenece la fila de detalle. |
+| `partido_id` | Identificador de la agrupación o partido al que se le atribuyen los votos en esa mesa. |
+| `votos` | Cantidad de votos obtenidos por esa agrupación en esa mesa. |
+
+### Llaves por dataset
+
+- `mesas_data.txt`: llave `codigo_mesa`.
+- `agrupaciones.txt`: llave `partido_id`.
+- `votos.txt`: llave compuesta `codigo_mesa + partido_id`.
+
+### Relaciones y cardinalidad
+
+- `mesas_data` (1) -> `votos` (N): por `codigo_mesa` con match exacto.
+- `agrupaciones` (1) -> `votos` (N): por `partido_id` con match exacto.
+
+`votos` es el único dataset de detalle (many) porque almacena múltiples filas por mesa, una por agrupación/candidato. Por eso su llave es compuesta (`codigo_mesa`, `partido_id`).
+
 ## Archivos de entrada
 
 - `source_data/todas_las_mesas.txt`: listado maestro de mesas ONPE (referencia completa).
@@ -129,61 +184,6 @@ También puedes ejecutar el paquete como módulo después de instalarlo en edita
 pip install -e .
 python -m onpe_scraper --input source_data/MesasFaltantes.txt --output-dir output
 ```
-
-## Modelo de datos de output
-
-Los archivos de `output` están delimitados por tabulaciones y se relacionan por IDs con match exacto (sin transformaciones adicionales al momento de cruzar).
-
-### Columnas e interpretación de salida
-
-#### `output/agrupaciones.txt`
-
-Dimensión de partidos o agrupaciones detectadas en la extracción.
-
-| Columna | Interpretación |
-| --- | --- |
-| `partido_id` | Identificador único de la agrupación o partido en la publicación de ONPE. Es la llave de esta tabla. |
-| `nombre` | Nombre textual de la agrupación o partido. |
-
-#### `output/mesas_data.txt`
-
-Tabla principal a nivel de mesa. Una fila representa una mesa consultada en ONPE.
-
-| Columna | Interpretación |
-| --- | --- |
-| `codigo_mesa` | Identificador único de la mesa. Es la llave de esta tabla. |
-| `ubigeo` | Código ubigeo asociado a la mesa según la respuesta de ONPE. |
-| `local_votacion` | Nombre del local de votación donde pertenece la mesa. |
-| `electores_habiles` | Total de electores habilitados para votar en la mesa. |
-| `votos_emitidos` | Total de votos emitidos registrados para la mesa. |
-| `votos_validos` | Total de votos válidos registrados para la mesa. |
-| `blancos` | Total de votos en blanco registrados para la mesa. |
-| `nulos` | Total de votos nulos registrados para la mesa. |
-| `impugnados` | Total de votos impugnados registrados para la mesa. |
-| `estado_acta` | Estado publicado por ONPE para esa acta. Este campo gobierna si la mesa sale de `MesasFaltantes.txt` o permanece pendiente. |
-
-#### `output/votos.txt`
-
-Tabla de detalle por mesa y agrupación. Una mesa puede tener muchas filas, una por partido o agrupación.
-
-| Columna | Interpretación |
-| --- | --- |
-| `codigo_mesa` | Código de mesa al que pertenece la fila de detalle. |
-| `partido_id` | Identificador de la agrupación o partido al que se le atribuyen los votos en esa mesa. |
-| `votos` | Cantidad de votos obtenidos por esa agrupación en esa mesa. |
-
-### Llaves por dataset
-
-- `mesas_data.txt`: llave `codigo_mesa`.
-- `agrupaciones.txt`: llave `partido_id`.
-- `votos.txt`: llave compuesta `codigo_mesa + partido_id`.
-
-### Relaciones y cardinalidad
-
-- `mesas_data` (1) -> `votos` (N): por `codigo_mesa` con match exacto.
-- `agrupaciones` (1) -> `votos` (N): por `partido_id` con match exacto.
-
-`votos` es el único dataset de detalle (many) porque almacena múltiples filas por mesa, una por agrupación/candidato. Por eso su llave es compuesta (`codigo_mesa`, `partido_id`).
 
 ## Estructura
 
