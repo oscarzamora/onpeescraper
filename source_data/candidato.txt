@@ -1,4 +1,4 @@
-PartidoID	Candidato
+partido_id	Candidato
 19	Armando Masse Fernandez
 15	Napoleon Becerra Garcia
 11	Rafael Belaunde Llosa

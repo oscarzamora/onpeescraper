@@ -15,6 +15,7 @@ import requests
 from curl_cffi import requests as curl_requests
 
 
+# Representa el resultado consolidado de una mesa a nivel cabecera.
 @dataclass(slots=True)
 class MesaData:
     codigo_mesa: str
@@ -29,12 +30,14 @@ class MesaData:
     estado_acta: str
 
 
+# Representa una agrupación política detectada en el detalle del acta.
 @dataclass(slots=True)
 class AgrupacionData:
     partido_id: str
     nombre: str
 
 
+# Representa el detalle de votos por mesa y agrupación.
 @dataclass(slots=True)
 class VotoData:
     codigo_mesa: str
@@ -42,6 +45,7 @@ class VotoData:
     votos: int
 
 
+# Agrupa todo lo extraído para una mesa durante el procesamiento paralelo.
 @dataclass(slots=True)
 class MesaResult:
     index: int
@@ -71,10 +75,12 @@ class OnpeExtractor:
 
     @staticmethod
     def normalize_mesa_code(codigo_mesa: str) -> str:
+        # Normaliza los códigos a 6 dígitos para que todas las consultas usen el mismo formato.
         return codigo_mesa.zfill(6)
 
     @staticmethod
     def _build_session() -> curl_requests.Session:
+        # Crea una sesión HTTP con headers de navegador para obtener el JSON real de ONPE.
         session = curl_requests.Session()
         session.headers.update(
             {
@@ -88,6 +94,7 @@ class OnpeExtractor:
         return session
 
     def _get_session(self) -> curl_requests.Session:
+        # Reutiliza una sesión por hilo para no recrear conexiones en cada petición.
         session = getattr(self._thread_local, "session", None)
         if session is None:
             session = self._build_session()
@@ -95,6 +102,7 @@ class OnpeExtractor:
         return session
 
     def _fetch_mesa_requests(self, codigo_mesa: str) -> dict[str, Any] | None:
+        # Consulta el backend de ONPE por código de mesa y devuelve el payload JSON si es válido.
         url = f"{self.base_url}/actas/buscar/mesa"
         try:
             response = self._get_session().get(
@@ -116,6 +124,7 @@ class OnpeExtractor:
 
     @staticmethod
     def load_mesas(csv_path: Path) -> list[str]:
+        # Lee el listado operativo, elimina duplicados y conserva solo códigos numéricos válidos.
         mesas: list[str] = []
         seen: set[str] = set()
 
@@ -134,10 +143,12 @@ class OnpeExtractor:
         return mesas
 
     def fetch_mesa(self, codigo_mesa: str) -> dict[str, Any] | None:
+        # Punto de acceso público para consultar una mesa ya normalizada.
         codigo_mesa = self.normalize_mesa_code(codigo_mesa)
         return self._fetch_mesa_requests(codigo_mesa)
 
     def extract_acta(self, payload: dict[str, Any] | None) -> dict[str, Any] | None:
+        # Selecciona únicamente la acta correspondiente a la elección configurada.
         if not payload:
             return None
 
@@ -153,6 +164,7 @@ class OnpeExtractor:
 
     @staticmethod
     def _int_value(value: Any) -> int:
+        # Convierte valores numéricos a int y usa 0 si el dato viene vacío o inválido.
         try:
             return int(value)
         except (TypeError, ValueError):
@@ -160,11 +172,13 @@ class OnpeExtractor:
 
     @staticmethod
     def _text_value(value: Any) -> str:
+        # Normaliza cualquier valor textual a string sin espacios sobrantes.
         if value is None:
             return ""
         return str(value).strip()
 
     def build_mesa_data(self, acta: dict[str, Any]) -> MesaData:
+        # Construye la fila principal de la mesa y extrae blancos, nulos e impugnados desde el detalle.
         detalle = acta.get("detalle") if isinstance(acta.get("detalle"), list) else []
 
         blancos = next((self._int_value(item.get("adVotos")) for item in detalle if item.get("adCodigo") == "80"), 0)
@@ -185,6 +199,7 @@ class OnpeExtractor:
         )
 
     def build_agrupaciones(self, acta: dict[str, Any]) -> list[AgrupacionData]:
+        # Construye el catálogo de agrupaciones a partir del detalle publicado por ONPE.
         detalle = acta.get("detalle") if isinstance(acta.get("detalle"), list) else []
         agrupaciones: list[AgrupacionData] = []
 
@@ -205,6 +220,7 @@ class OnpeExtractor:
         return agrupaciones
 
     def build_votos(self, codigo_mesa: str, acta: dict[str, Any]) -> list[VotoData]:
+        # Genera el detalle de votos por agrupación para una mesa específica.
         detalle = acta.get("detalle") if isinstance(acta.get("detalle"), list) else []
         votos: list[VotoData] = []
 
@@ -224,9 +240,11 @@ class OnpeExtractor:
 
     @staticmethod
     def _chunked(items: list[tuple[int, str]], size: int) -> list[list[tuple[int, str]]]:
+        # Divide las mesas en lotes para controlar memoria, avance y paralelismo.
         return [items[index : index + size] for index in range(0, len(items), size)]
 
     def _process_mesa(self, index: int, codigo_mesa: str) -> MesaResult:
+        # Ejecuta el ciclo completo de una mesa: consulta, filtro de acta y transformación a datasets.
         payload = self._fetch_mesa_requests(codigo_mesa)
         acta = self.extract_acta(payload)
 
@@ -258,6 +276,7 @@ class OnpeExtractor:
 
     @staticmethod
     def _write_tsv(path: Path, headers: list[str], rows: list[list[str]]) -> None:
+        # Escribe un TXT tabulado completo, incluyendo encabezado.
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -266,6 +285,7 @@ class OnpeExtractor:
 
     @staticmethod
     def _append_tsv(path: Path, rows: list[list[str]]) -> None:
+        # Mantiene una utilidad de append tabulado para escenarios auxiliares o extensiones futuras.
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -273,6 +293,7 @@ class OnpeExtractor:
 
     @staticmethod
     def _load_agrupaciones_tsv(path: Path) -> OrderedDict[str, AgrupacionData]:
+        # Carga agrupaciones previas para poder hacer merge incremental sin perder catálogo histórico.
         result: OrderedDict[str, AgrupacionData] = OrderedDict()
         if not path.exists():
             return result
@@ -288,6 +309,7 @@ class OnpeExtractor:
         return result
 
     def _load_mesas_data_tsv(self, path: Path) -> OrderedDict[str, list[str]]:
+        # Carga mesas previas y tolera nombres de columnas antiguos para compatibilidad hacia atrás.
         result: OrderedDict[str, list[str]] = OrderedDict()
         if not path.exists():
             return result
@@ -336,6 +358,7 @@ class OnpeExtractor:
         return result
 
     def _load_votos_tsv(self, path: Path) -> list[list[str]]:
+        # Carga votos previos para reemplazar solo las mesas actualizadas en modo append.
         result: list[list[str]] = []
         if not path.exists():
             return result
@@ -358,6 +381,7 @@ class OnpeExtractor:
         return result
 
     def _write_mesas_faltantes(self, path: Path, mesas_rows: list[list[str]]) -> int:
+        # Reconstruye el listado operativo con las mesas cuyo estado todavía no es Contabilizada.
         pendientes: list[str] = []
         seen: set[str] = set()
 
@@ -382,6 +406,7 @@ class OnpeExtractor:
 
     @staticmethod
     def _prefer_existing_path(primary: Path, legacy: Path) -> Path:
+        # Prefiere el nombre actual del archivo, pero admite rutas antiguas para migraciones suaves.
         if primary.exists():
             return primary
         if legacy.exists():
@@ -389,6 +414,7 @@ class OnpeExtractor:
         return primary
 
     def run(self, mesas_csv: Path, output_dir: Path, append: bool = False) -> dict[str, int]:
+        # Orquesta toda la extracción: lee entrada, procesa lotes, consolida resultados y reescribe salidas.
         mesas = self.load_mesas(mesas_csv)
         indexed_mesas = list(enumerate(mesas))
         batches = self._chunked(indexed_mesas, self.batch_size)
@@ -414,11 +440,13 @@ class OnpeExtractor:
         mesas_sin_data = 0
 
         for batch_number, lote in enumerate(batches, start=1):
+            # Reporta el inicio del lote para seguimiento operativo en corridas largas.
             print(
                 f"Lote {batch_number}/{len(batches)}: iniciando {len(lote)} mesas",
                 flush=True,
             )
             resultados: list[MesaResult] = []
+            # Procesa cada mesa del lote en paralelo y junta los resultados terminados.
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 futuros = [
                     executor.submit(self._process_mesa, index, codigo_mesa)
@@ -429,6 +457,7 @@ class OnpeExtractor:
 
             resultados.sort(key=lambda item: item.index)
 
+            # Consolida el lote en las tres salidas lógicas: mesas, agrupaciones y votos.
             for resultado in resultados:
                 if resultado.mesa_data is None:
                     mesas_sin_data += 1
@@ -469,6 +498,7 @@ class OnpeExtractor:
 
             completadas = mesas_procesadas + mesas_sin_data
             porcentaje = (completadas / total_mesas * 100) if total_mesas else 100.0
+            # Reporta avance acumulado para saber cuánto falta de la corrida completa.
             print(
                 (
                     f"Lote {batch_number}/{len(batches)}: completado "
@@ -478,12 +508,14 @@ class OnpeExtractor:
                 flush=True,
             )
 
+        # Reescribe el catálogo consolidado de agrupaciones detectadas.
         self._write_tsv(
             agrupaciones_path,
             ["partido_id", "nombre"],
             [[item.partido_id, item.nombre] for item in agrupaciones_unicas.values()],
         )
         if append:
+            # En modo incremental, reemplaza solo las mesas actualizadas y conserva las demás.
             existentes = self._load_mesas_data_tsv(mesas_data_read_path)
             for row in mesas_rows:
                 codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
@@ -491,6 +523,7 @@ class OnpeExtractor:
                     existentes[codigo_mesa] = row
             mesas_rows = list(existentes.values())
 
+            # Elimina votos antiguos de mesas reconsultadas y agrega el detalle nuevo.
             votos_existentes = self._load_votos_tsv(votos_read_path)
             votos_filtrados = [
                 row for row in votos_existentes if self.normalize_mesa_code(self._text_value(row[0])) not in mesas_actualizadas
@@ -509,6 +542,7 @@ class OnpeExtractor:
             votos_unicos[(codigo_mesa, partido_id)] = [codigo_mesa, partido_id, self._text_value(row[2])]
         votos_rows = list(votos_unicos.values())
 
+        # Reescribe las tablas finales listas para análisis.
         self._write_tsv(
             mesas_data_path,
             [
@@ -531,8 +565,10 @@ class OnpeExtractor:
             votos_rows,
         )
 
+        # Actualiza el archivo de pendientes a partir del estado final de las mesas consolidadas.
         mesas_faltantes = self._write_mesas_faltantes(mesas_csv, mesas_rows)
 
+        # Devuelve métricas resumidas de la corrida para imprimirlas en CLI.
         return {
             "mesas_en_listado": len(mesas),
             "mesas_procesadas": mesas_procesadas,

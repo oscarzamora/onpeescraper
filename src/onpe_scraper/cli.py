@@ -7,6 +7,7 @@ from .scraper import OnpeExtractor
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # Expone los parámetros operativos del scraper para correrlo desde consola.
     parser = argparse.ArgumentParser(description="Extractor ONPE 2026 basado en mesas faltantes")
     parser.add_argument(
         "--input",
@@ -44,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    # Lee argumentos y resuelve compatibilidad con rutas antiguas de entrada.
     parser = build_parser()
     args = parser.parse_args()
 
@@ -54,6 +56,7 @@ def main() -> int:
             input_path = legacy_csv
     output_dir = Path(args.output_dir)
 
+    # Construye el extractor con la configuración elegida por el usuario.
     extractor = OnpeExtractor(
         base_url=args.base_url,
         id_eleccion=args.id_eleccion,
@@ -62,6 +65,8 @@ def main() -> int:
         max_workers=args.max_workers,
         batch_size=args.batch_size,
     )
+
+    # Ejecuta la extracción completa y resume el resultado al final.
     summary = extractor.run(input_path, output_dir, append=args.append)
 
     print("Extracción completada")
