@@ -1,0 +1,39 @@
+PartidoID	Candidato
+19	Armando Masse Fernandez
+15	Napoleon Becerra Garcia
+11	Rafael Belaunde Llosa
+26	Wolfgang Grozo Costa
+16	Jorge Nieto Montesinos
+5	Alvaro Paz de la Barra
+13	
+2	Alfonso Lopez Chau Nava
+20	George Forsyth Sommer
+32	Jose Luna Galvez
+17	Charlie Carrasco Salazar
+24	Herbert Caller Gutierrez
+18	Alex Gonzales Castillo
+14	Ricardo Belmont Cassinelli
+28	Francisco Diez-Canseco Tavara
+25	Yonhy Lescano Ancieta
+3	Ronald Atencio Sotomayor
+30	Walter Chirinos Purizaga
+37	Rosario Fernandez Bazan
+23	Carlos Alvarez Loayza
+38	Roberto Chiabra Leon
+22	Mesias Guevara Amasifuen
+12	Pitter Valderrama Pena
+1	Vladimir Cerron Rojas
+8	Keiko Fujimori Higuchi
+4	Carlos Jaico Carranza
+10	Roberto Sanchez Palomino
+29	Mario Vizcarra Cornejo
+33	Marisol Perez Tello
+36	Antonio Ortiz Villano
+6	
+31	Carlos Espa
+7	Jose Daniel Williams Zapata
+34	Paul Jaimes Blanco
+21	Fernando Olivera Vega
+35	Rafael Lopez Aliaga Cazorla
+1	Cesar Acuna Peralta
+9	Giannina Molinelli Aristondo
