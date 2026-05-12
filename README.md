@@ -92,17 +92,6 @@ Catálogo geográfico complementario. Debe tratarse como tabla de referencia ext
 - Copia usada en el proyecto: `source_data/geodir-ubigeo-reniec.xlsx`
 - Advertencia: este archivo puede no estar actualizado respecto a la última versión oficial disponible.
 
-El archivo contiene campos como:
-
-- `Ubigeo`
-- `Distrito`
-- `Provincia`
-- `Departamento`
-- `Poblacion`
-- `Superficie`
-- `Y`
-- `X`
-
 Ejemplo de registros:
 
 ```text
