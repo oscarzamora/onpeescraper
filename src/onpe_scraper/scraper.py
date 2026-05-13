@@ -413,6 +413,84 @@ class OnpeExtractor:
             return legacy
         return primary
 
+    def _flush_partial_data(
+        self,
+        agrupaciones_path: Path,
+        mesas_data_path: Path,
+        votos_path: Path,
+        agrupaciones_unicas: OrderedDict[str, AgrupacionData],
+        mesas_rows: list[list[str]],
+        votos_rows: list[list[str]],
+        append: bool,
+        mesas_data_read_path: Path,
+        votos_read_path: Path,
+        mesas_actualizadas: set[str],
+    ) -> None:
+        # Escribe los datos acumulados hasta el punto de error de conexión.
+        print("⚠ Perdida de conexión detectada. Guardando datos acumulados...", flush=True)
+        
+        # Escribe agrupaciones
+        self._write_tsv(
+            agrupaciones_path,
+            ["partido_id", "nombre"],
+            [[item.partido_id, item.nombre] for item in agrupaciones_unicas.values()],
+        )
+        
+        # Escribe mesas
+        mesas_rows_final = mesas_rows
+        if append:
+            existentes = self._load_mesas_data_tsv(mesas_data_read_path)
+            for row in mesas_rows:
+                codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
+                if codigo_mesa:
+                    existentes[codigo_mesa] = row
+            mesas_rows_final = list(existentes.values())
+        
+        self._write_tsv(
+            mesas_data_path,
+            [
+                "codigo_mesa",
+                "ubigeo",
+                "local_votacion",
+                "electores_habiles",
+                "votos_emitidos",
+                "votos_validos",
+                "blancos",
+                "nulos",
+                "impugnados",
+                "estado_acta",
+            ],
+            mesas_rows_final,
+        )
+        
+        # Escribe votos
+        votos_unicos: OrderedDict[tuple[str, str], list[str]] = OrderedDict()
+        votos_rows_final = votos_rows
+        if append:
+            votos_existentes = self._load_votos_tsv(votos_read_path)
+            votos_filtrados = [
+                row for row in votos_existentes if self.normalize_mesa_code(self._text_value(row[0])) not in mesas_actualizadas
+            ]
+            votos_rows_final = votos_filtrados + votos_rows
+        
+        for row in votos_rows_final:
+            if len(row) < 3:
+                continue
+            codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
+            partido_id = self._text_value(row[1])
+            if not codigo_mesa:
+                continue
+            votos_unicos[(codigo_mesa, partido_id)] = [codigo_mesa, partido_id, self._text_value(row[2])]
+        votos_rows_final = list(votos_unicos.values())
+        
+        self._write_tsv(
+            votos_path,
+            ["codigo_mesa", "partido_id", "votos"],
+            votos_rows_final,
+        )
+        
+        print("✓ Datos guardados exitosamente", flush=True)
+
     def run(self, mesas_csv: Path, output_dir: Path, append: bool = False) -> dict[str, int]:
         # Orquesta toda la extracción: lee entrada, procesa lotes, consolida resultados y reescribe salidas.
         mesas = self.load_mesas(mesas_csv)
@@ -439,74 +517,99 @@ class OnpeExtractor:
         mesas_procesadas = 0
         mesas_sin_data = 0
 
-        for batch_number, lote in enumerate(batches, start=1):
-            # Reporta el inicio del lote para seguimiento operativo en corridas largas.
-            print(
-                f"Lote {batch_number}/{len(batches)}: iniciando {len(lote)} mesas",
-                flush=True,
-            )
-            resultados: list[MesaResult] = []
-            # Procesa cada mesa del lote en paralelo y junta los resultados terminados.
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                futuros = [
-                    executor.submit(self._process_mesa, index, codigo_mesa)
-                    for index, codigo_mesa in lote
-                ]
-                for futuro in as_completed(futuros):
-                    resultados.append(futuro.result())
-
-            resultados.sort(key=lambda item: item.index)
-
-            # Consolida el lote en las tres salidas lógicas: mesas, agrupaciones y votos.
-            for resultado in resultados:
-                if resultado.mesa_data is None:
-                    mesas_sin_data += 1
-                    continue
-
-                mesas_procesadas += 1
-
-                mesa_data = resultado.mesa_data
-                mesas_rows.append(
-                    [
-                        mesa_data.codigo_mesa,
-                        mesa_data.id_ubigeo,
-                        mesa_data.local_votacion,
-                        str(mesa_data.electores_habiles),
-                        str(mesa_data.votos_emitidos),
-                        str(mesa_data.votos_validos),
-                        str(mesa_data.blancos),
-                        str(mesa_data.nulos),
-                        str(mesa_data.impugnados),
-                        mesa_data.estado_acta,
-                    ]
+        try:
+            for batch_number, lote in enumerate(batches, start=1):
+                # Reporta el inicio del lote para seguimiento operativo en corridas largas.
+                print(
+                    f"Lote {batch_number}/{len(batches)}: iniciando {len(lote)} mesas",
+                    flush=True,
                 )
-                mesas_actualizadas.add(mesa_data.codigo_mesa)
+                resultados: list[MesaResult] = []
+                # Procesa cada mesa del lote en paralelo y junta los resultados terminados.
+                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    futuros = [
+                        executor.submit(self._process_mesa, index, codigo_mesa)
+                        for index, codigo_mesa in lote
+                    ]
+                    for futuro in as_completed(futuros):
+                        try:
+                            resultado = futuro.result()
+                            resultados.append(resultado)
+                        except Exception as e:
+                            # Si hay error de conexión en un hilo, lo propagamos al nivel superior
+                            if isinstance(e, (requests.ConnectionError, requests.Timeout, requests.ConnectTimeout)):
+                                raise
+                            # Otros errores se ignoran para continuar con el siguiente futuro
+                            continue
 
-                for agrupacion in resultado.agrupaciones:
-                    key = agrupacion.partido_id or agrupacion.nombre
-                    if key and key not in agrupaciones_unicas:
-                        agrupaciones_unicas[key] = agrupacion
+                resultados.sort(key=lambda item: item.index)
 
-                for voto in resultado.votos:
-                    votos_rows.append(
+                # Consolida el lote en las tres salidas lógicas: mesas, agrupaciones y votos.
+                for resultado in resultados:
+                    if resultado.mesa_data is None:
+                        mesas_sin_data += 1
+                        continue
+
+                    mesas_procesadas += 1
+
+                    mesa_data = resultado.mesa_data
+                    mesas_rows.append(
                         [
-                            voto.codigo_mesa,
-                            voto.partido_id,
-                            str(voto.votos),
+                            mesa_data.codigo_mesa,
+                            mesa_data.id_ubigeo,
+                            mesa_data.local_votacion,
+                            str(mesa_data.electores_habiles),
+                            str(mesa_data.votos_emitidos),
+                            str(mesa_data.votos_validos),
+                            str(mesa_data.blancos),
+                            str(mesa_data.nulos),
+                            str(mesa_data.impugnados),
+                            mesa_data.estado_acta,
                         ]
                     )
+                    mesas_actualizadas.add(mesa_data.codigo_mesa)
 
-            completadas = mesas_procesadas + mesas_sin_data
-            porcentaje = (completadas / total_mesas * 100) if total_mesas else 100.0
-            # Reporta avance acumulado para saber cuánto falta de la corrida completa.
-            print(
-                (
-                    f"Lote {batch_number}/{len(batches)}: completado "
-                    f"procesadas={mesas_procesadas} sin_data={mesas_sin_data} "
-                    f"avance={completadas}/{total_mesas} ({porcentaje:.1f}%)"
-                ),
-                flush=True,
+                    for agrupacion in resultado.agrupaciones:
+                        key = agrupacion.partido_id or agrupacion.nombre
+                        if key and key not in agrupaciones_unicas:
+                            agrupaciones_unicas[key] = agrupacion
+
+                    for voto in resultado.votos:
+                        votos_rows.append(
+                            [
+                                voto.codigo_mesa,
+                                voto.partido_id,
+                                str(voto.votos),
+                            ]
+                        )
+
+                completadas = mesas_procesadas + mesas_sin_data
+                porcentaje = (completadas / total_mesas * 100) if total_mesas else 100.0
+                # Reporta avance acumulado para saber cuánto falta de la corrida completa.
+                print(
+                    (
+                        f"Lote {batch_number}/{len(batches)}: completado "
+                        f"procesadas={mesas_procesadas} sin_data={mesas_sin_data} "
+                        f"avance={completadas}/{total_mesas} ({porcentaje:.1f}%)"
+                    ),
+                    flush=True,
+                )
+        except (requests.ConnectionError, requests.Timeout, requests.ConnectTimeout) as e:
+            # Si pierde conexión, genera flush parcial de datos acumulados y termina
+            print(f"✗ Error de conexión: {e}", flush=True)
+            self._flush_partial_data(
+                agrupaciones_path,
+                mesas_data_path,
+                votos_path,
+                agrupaciones_unicas,
+                mesas_rows,
+                votos_rows,
+                append,
+                mesas_data_read_path,
+                votos_read_path,
+                mesas_actualizadas,
             )
+            raise SystemExit(1)
 
         # Reescribe el catálogo consolidado de agrupaciones detectadas.
         self._write_tsv(

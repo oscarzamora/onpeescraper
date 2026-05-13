@@ -38,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--append",
         action="store_true",
-        default=False,
+        default=True,
         help="Actualizar (upsert) resultados en los TXT existentes en lugar de reconstruirlos desde cero",
     )
     return parser

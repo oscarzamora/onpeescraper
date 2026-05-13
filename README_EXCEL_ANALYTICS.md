@@ -16,6 +16,17 @@ El objetivo es armar un Excel que consuma los archivos del proyecto desde GitHub
 - mapa interactivo con mouse-over;
 - refresco automático desde GitHub RAW.
 
+## Estado actual del archivo Excel
+
+- Archivo detectado: `analytics/onpe_analytics.xlsx`.
+- El workbook ya tiene las importaciones preparadas y apuntando a fuentes en GitHub.
+- Para terminar la explotación analítica faltan estos pasos:
+  - validar tipos de datos y formato de columnas clave (`codigo_mesa`, `partido_id`, `ubigeo`);
+  - crear/ajustar relaciones del modelo de datos;
+  - crear medidas DAX base;
+  - construir pivots, gráficos y mapa;
+  - dejar configurado el refresco con `Actualizar todo`.
+
 ## 1. Archivos fuente en GitHub RAW
 
 El Excel se alimenta directamente desde estos archivos publicados en GitHub.
