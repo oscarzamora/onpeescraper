@@ -413,6 +413,94 @@ class OnpeExtractor:
             return legacy
         return primary
 
+    def _persist_outputs(
+        self,
+        *,
+        mesas_csv: Path,
+        append: bool,
+        agrupaciones_path: Path,
+        mesas_data_path: Path,
+        votos_path: Path,
+        agrupaciones_read_path: Path,
+        mesas_data_read_path: Path,
+        votos_read_path: Path,
+        agrupaciones_unicas: OrderedDict[str, AgrupacionData],
+        mesas_rows: list[list[str]],
+        votos_rows: list[list[str]],
+        mesas_actualizadas: set[str],
+    ) -> dict[str, int]:
+        # Persiste el estado actual para no perder avance en corridas largas o ante fallos de red.
+        self._write_tsv(
+            agrupaciones_path,
+            ["partido_id", "nombre"],
+            [[item.partido_id, item.nombre] for item in agrupaciones_unicas.values()],
+        )
+
+        mesas_rows_to_write = list(mesas_rows)
+        votos_rows_to_write = list(votos_rows)
+
+        if append:
+            existentes = self._load_mesas_data_tsv(mesas_data_read_path)
+            for row in mesas_rows_to_write:
+                codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
+                if codigo_mesa:
+                    existentes[codigo_mesa] = row
+            mesas_rows_to_write = list(existentes.values())
+
+            # Elimina votos antiguos de mesas reconsultadas y agrega el detalle nuevo.
+            votos_existentes = self._load_votos_tsv(votos_read_path)
+            votos_filtrados = [
+                row
+                for row in votos_existentes
+                if self.normalize_mesa_code(self._text_value(row[0])) not in mesas_actualizadas
+            ]
+            votos_rows_to_write = votos_filtrados + votos_rows_to_write
+
+        # Evita acumulación histórica de duplicados por mesa/partido.
+        votos_unicos: OrderedDict[tuple[str, str], list[str]] = OrderedDict()
+        for row in votos_rows_to_write:
+            if len(row) < 3:
+                continue
+            codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
+            partido_id = self._text_value(row[1])
+            if not codigo_mesa:
+                continue
+            votos_unicos[(codigo_mesa, partido_id)] = [
+                codigo_mesa,
+                partido_id,
+                self._text_value(row[2]),
+            ]
+        votos_rows_to_write = list(votos_unicos.values())
+
+        self._write_tsv(
+            mesas_data_path,
+            [
+                "codigo_mesa",
+                "ubigeo",
+                "local_votacion",
+                "electores_habiles",
+                "votos_emitidos",
+                "votos_validos",
+                "blancos",
+                "nulos",
+                "impugnados",
+                "estado_acta",
+            ],
+            mesas_rows_to_write,
+        )
+        self._write_tsv(
+            votos_path,
+            ["codigo_mesa", "partido_id", "votos"],
+            votos_rows_to_write,
+        )
+
+        mesas_faltantes = self._write_mesas_faltantes(mesas_csv, mesas_rows_to_write)
+        return {
+            "mesas_rows": len(mesas_rows_to_write),
+            "votos_rows": len(votos_rows_to_write),
+            "mesas_faltantes": mesas_faltantes,
+        }
+
     def run(self, mesas_csv: Path, output_dir: Path, append: bool = False) -> dict[str, int]:
         # Orquesta toda la extracción: lee entrada, procesa lotes, consolida resultados y reescribe salidas.
         mesas = self.load_mesas(mesas_csv)
@@ -438,135 +526,140 @@ class OnpeExtractor:
 
         mesas_procesadas = 0
         mesas_sin_data = 0
+        flush_cada = 20
+        siguiente_flush = flush_cada
+        persist_stats = {"mesas_rows": 0, "votos_rows": 0, "mesas_faltantes": len(mesas)}
 
-        for batch_number, lote in enumerate(batches, start=1):
-            # Reporta el inicio del lote para seguimiento operativo en corridas largas.
-            print(
-                f"Lote {batch_number}/{len(batches)}: iniciando {len(lote)} mesas",
-                flush=True,
-            )
-            resultados: list[MesaResult] = []
-            # Procesa cada mesa del lote en paralelo y junta los resultados terminados.
-            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                futuros = [
-                    executor.submit(self._process_mesa, index, codigo_mesa)
-                    for index, codigo_mesa in lote
-                ]
-                for futuro in as_completed(futuros):
-                    resultados.append(futuro.result())
-
-            resultados.sort(key=lambda item: item.index)
-
-            # Consolida el lote en las tres salidas lógicas: mesas, agrupaciones y votos.
-            for resultado in resultados:
-                if resultado.mesa_data is None:
-                    mesas_sin_data += 1
-                    continue
-
-                mesas_procesadas += 1
-
-                mesa_data = resultado.mesa_data
-                mesas_rows.append(
-                    [
-                        mesa_data.codigo_mesa,
-                        mesa_data.id_ubigeo,
-                        mesa_data.local_votacion,
-                        str(mesa_data.electores_habiles),
-                        str(mesa_data.votos_emitidos),
-                        str(mesa_data.votos_validos),
-                        str(mesa_data.blancos),
-                        str(mesa_data.nulos),
-                        str(mesa_data.impugnados),
-                        mesa_data.estado_acta,
-                    ]
+        try:
+            for batch_number, lote in enumerate(batches, start=1):
+                # Reporta el inicio del lote para seguimiento operativo en corridas largas.
+                print(
+                    f"Lote {batch_number}/{len(batches)}: iniciando {len(lote)} mesas",
+                    flush=True,
                 )
-                mesas_actualizadas.add(mesa_data.codigo_mesa)
+                resultados: list[MesaResult] = []
+                # Procesa cada mesa del lote en paralelo y junta los resultados terminados.
+                with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    futuros = [
+                        executor.submit(self._process_mesa, index, codigo_mesa)
+                        for index, codigo_mesa in lote
+                    ]
+                    for futuro in as_completed(futuros):
+                        resultados.append(futuro.result())
 
-                for agrupacion in resultado.agrupaciones:
-                    key = agrupacion.partido_id or agrupacion.nombre
-                    if key and key not in agrupaciones_unicas:
-                        agrupaciones_unicas[key] = agrupacion
+                resultados.sort(key=lambda item: item.index)
 
-                for voto in resultado.votos:
-                    votos_rows.append(
-                        [
-                            voto.codigo_mesa,
-                            voto.partido_id,
-                            str(voto.votos),
-                        ]
-                    )
+                # Consolida el lote en las tres salidas lógicas: mesas, agrupaciones y votos.
+                for resultado in resultados:
+                    if resultado.mesa_data is None:
+                        mesas_sin_data += 1
+                    else:
+                        mesas_procesadas += 1
 
-            completadas = mesas_procesadas + mesas_sin_data
-            porcentaje = (completadas / total_mesas * 100) if total_mesas else 100.0
-            # Reporta avance acumulado para saber cuánto falta de la corrida completa.
-            print(
-                (
-                    f"Lote {batch_number}/{len(batches)}: completado "
-                    f"procesadas={mesas_procesadas} sin_data={mesas_sin_data} "
-                    f"avance={completadas}/{total_mesas} ({porcentaje:.1f}%)"
-                ),
-                flush=True,
-            )
+                        mesa_data = resultado.mesa_data
+                        mesas_rows.append(
+                            [
+                                mesa_data.codigo_mesa,
+                                mesa_data.id_ubigeo,
+                                mesa_data.local_votacion,
+                                str(mesa_data.electores_habiles),
+                                str(mesa_data.votos_emitidos),
+                                str(mesa_data.votos_validos),
+                                str(mesa_data.blancos),
+                                str(mesa_data.nulos),
+                                str(mesa_data.impugnados),
+                                mesa_data.estado_acta,
+                            ]
+                        )
+                        mesas_actualizadas.add(mesa_data.codigo_mesa)
 
-        # Reescribe el catálogo consolidado de agrupaciones detectadas.
-        self._write_tsv(
-            agrupaciones_path,
-            ["partido_id", "nombre"],
-            [[item.partido_id, item.nombre] for item in agrupaciones_unicas.values()],
+                        for agrupacion in resultado.agrupaciones:
+                            key = agrupacion.partido_id or agrupacion.nombre
+                            if key and key not in agrupaciones_unicas:
+                                agrupaciones_unicas[key] = agrupacion
+
+                        for voto in resultado.votos:
+                            votos_rows.append(
+                                [
+                                    voto.codigo_mesa,
+                                    voto.partido_id,
+                                    str(voto.votos),
+                                ]
+                            )
+
+                    completadas = mesas_procesadas + mesas_sin_data
+                    if completadas >= siguiente_flush:
+                        persist_stats = self._persist_outputs(
+                            mesas_csv=mesas_csv,
+                            append=append,
+                            agrupaciones_path=agrupaciones_path,
+                            mesas_data_path=mesas_data_path,
+                            votos_path=votos_path,
+                            agrupaciones_read_path=agrupaciones_read_path,
+                            mesas_data_read_path=mesas_data_read_path,
+                            votos_read_path=votos_read_path,
+                            agrupaciones_unicas=agrupaciones_unicas,
+                            mesas_rows=mesas_rows,
+                            votos_rows=votos_rows,
+                            mesas_actualizadas=mesas_actualizadas,
+                        )
+                        print(
+                            (
+                                f"Flush de checkpoint en {completadas} mesas: "
+                                f"mesas={persist_stats['mesas_rows']} votos={persist_stats['votos_rows']}"
+                            ),
+                            flush=True,
+                        )
+                        siguiente_flush += flush_cada
+
+                completadas = mesas_procesadas + mesas_sin_data
+                porcentaje = (completadas / total_mesas * 100) if total_mesas else 100.0
+                # Reporta avance acumulado para saber cuánto falta de la corrida completa.
+                print(
+                    (
+                        f"Lote {batch_number}/{len(batches)}: completado "
+                        f"procesadas={mesas_procesadas} sin_data={mesas_sin_data} "
+                        f"avance={completadas}/{total_mesas} ({porcentaje:.1f}%)"
+                    ),
+                    flush=True,
+                )
+        except Exception:
+            # Guarda lo ya recolectado antes de propagar la excepción al CLI.
+            print("Excepción detectada: iniciando flush de emergencia", flush=True)
+            try:
+                self._persist_outputs(
+                    mesas_csv=mesas_csv,
+                    append=append,
+                    agrupaciones_path=agrupaciones_path,
+                    mesas_data_path=mesas_data_path,
+                    votos_path=votos_path,
+                    agrupaciones_read_path=agrupaciones_read_path,
+                    mesas_data_read_path=mesas_data_read_path,
+                    votos_read_path=votos_read_path,
+                    agrupaciones_unicas=agrupaciones_unicas,
+                    mesas_rows=mesas_rows,
+                    votos_rows=votos_rows,
+                    mesas_actualizadas=mesas_actualizadas,
+                )
+                print("Flush de emergencia completado", flush=True)
+            except Exception as flush_error:
+                print(f"No se pudo completar el flush de emergencia: {flush_error}", flush=True)
+            raise
+
+        persist_stats = self._persist_outputs(
+            mesas_csv=mesas_csv,
+            append=append,
+            agrupaciones_path=agrupaciones_path,
+            mesas_data_path=mesas_data_path,
+            votos_path=votos_path,
+            agrupaciones_read_path=agrupaciones_read_path,
+            mesas_data_read_path=mesas_data_read_path,
+            votos_read_path=votos_read_path,
+            agrupaciones_unicas=agrupaciones_unicas,
+            mesas_rows=mesas_rows,
+            votos_rows=votos_rows,
+            mesas_actualizadas=mesas_actualizadas,
         )
-        if append:
-            # En modo incremental, reemplaza solo las mesas actualizadas y conserva las demás.
-            existentes = self._load_mesas_data_tsv(mesas_data_read_path)
-            for row in mesas_rows:
-                codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
-                if codigo_mesa:
-                    existentes[codigo_mesa] = row
-            mesas_rows = list(existentes.values())
-
-            # Elimina votos antiguos de mesas reconsultadas y agrega el detalle nuevo.
-            votos_existentes = self._load_votos_tsv(votos_read_path)
-            votos_filtrados = [
-                row for row in votos_existentes if self.normalize_mesa_code(self._text_value(row[0])) not in mesas_actualizadas
-            ]
-            votos_rows = votos_filtrados + votos_rows
-
-        # Evita acumulación histórica de duplicados por mesa/partido.
-        votos_unicos: OrderedDict[tuple[str, str], list[str]] = OrderedDict()
-        for row in votos_rows:
-            if len(row) < 3:
-                continue
-            codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
-            partido_id = self._text_value(row[1])
-            if not codigo_mesa:
-                continue
-            votos_unicos[(codigo_mesa, partido_id)] = [codigo_mesa, partido_id, self._text_value(row[2])]
-        votos_rows = list(votos_unicos.values())
-
-        # Reescribe las tablas finales listas para análisis.
-        self._write_tsv(
-            mesas_data_path,
-            [
-                "codigo_mesa",
-                "ubigeo",
-                "local_votacion",
-                "electores_habiles",
-                "votos_emitidos",
-                "votos_validos",
-                "blancos",
-                "nulos",
-                "impugnados",
-                "estado_acta",
-            ],
-            mesas_rows,
-        )
-        self._write_tsv(
-            votos_path,
-            ["codigo_mesa", "partido_id", "votos"],
-            votos_rows,
-        )
-
-        # Actualiza el archivo de pendientes a partir del estado final de las mesas consolidadas.
-        mesas_faltantes = self._write_mesas_faltantes(mesas_csv, mesas_rows)
 
         # Devuelve métricas resumidas de la corrida para imprimirlas en CLI.
         return {
@@ -574,6 +667,6 @@ class OnpeExtractor:
             "mesas_procesadas": mesas_procesadas,
             "mesas_sin_data": mesas_sin_data,
             "agrupaciones_unicas": len(agrupaciones_unicas),
-            "votos_registrados": len(votos_rows),
-            "mesas_faltantes": mesas_faltantes,
+            "votos_registrados": persist_stats["votos_rows"],
+            "mesas_faltantes": persist_stats["mesas_faltantes"],
         }
