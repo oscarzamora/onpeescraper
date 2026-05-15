@@ -163,12 +163,14 @@ class OnpeExtractor:
         return None
 
     @staticmethod
-    def _int_value(value: Any) -> int:
-        # Convierte valores numéricos a int y usa 0 si el dato viene vacío o inválido.
+    def _int_value(value: Any) -> str:
+        # Convierte valores numéricos a string preservando vacíos, nunca devuelve 0 para datos faltantes.
         try:
-            return int(value)
+            if value is None or value == "":
+                return ""
+            return str(int(value))
         except (TypeError, ValueError):
-            return 0
+            return ""
 
     @staticmethod
     def _text_value(value: Any) -> str:
@@ -181,20 +183,20 @@ class OnpeExtractor:
         # Construye la fila principal de la mesa y extrae blancos, nulos e impugnados desde el detalle.
         detalle = acta.get("detalle") if isinstance(acta.get("detalle"), list) else []
 
-        blancos = next((self._int_value(item.get("adVotos")) for item in detalle if item.get("adCodigo") == "80"), 0)
-        nulos = next((self._int_value(item.get("adVotos")) for item in detalle if item.get("adCodigo") == "81"), 0)
-        impugnados = next((self._int_value(item.get("adVotos")) for item in detalle if item.get("adCodigo") == "82"), 0)
+        blancos_val = next((self._int_value(item.get("adVotos")) for item in detalle if item.get("adCodigo") == "80"), "")
+        nulos_val = next((self._int_value(item.get("adVotos")) for item in detalle if item.get("adCodigo") == "81"), "")
+        impugnados_val = next((self._int_value(item.get("adVotos")) for item in detalle if item.get("adCodigo") == "82"), "")
 
         return MesaData(
             codigo_mesa=self.normalize_mesa_code(self._text_value(acta.get("codigoMesa"))),
             id_ubigeo=self._text_value(acta.get("idUbigeo")),
             local_votacion=self._text_value(acta.get("nombreLocalVotacion")),
-            electores_habiles=self._int_value(acta.get("totalElectoresHabiles")),
-            votos_emitidos=self._int_value(acta.get("totalVotosEmitidos")),
-            votos_validos=self._int_value(acta.get("totalVotosValidos")),
-            blancos=blancos,
-            nulos=nulos,
-            impugnados=impugnados,
+            electores_habiles=int(self._int_value(acta.get("totalElectoresHabiles")) or 0),
+            votos_emitidos=int(self._int_value(acta.get("totalVotosEmitidos")) or 0),
+            votos_validos=int(self._int_value(acta.get("totalVotosValidos")) or 0),
+            blancos=int(blancos_val or 0),
+            nulos=int(nulos_val or 0),
+            impugnados=int(impugnados_val or 0),
             estado_acta=self._text_value(acta.get("descripcionEstadoActa")),
         )
 
@@ -275,8 +277,18 @@ class OnpeExtractor:
         )
 
     @staticmethod
+    def _write_tsv_headers(path: Path, headers: list[str]) -> None:
+        # Crea el archivo con encabezados solo si no existe.
+        if path.exists():
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+            writer.writerow(headers)
+
+    @staticmethod
     def _write_tsv(path: Path, headers: list[str], rows: list[list[str]]) -> None:
-        # Escribe un TXT tabulado completo, incluyendo encabezado.
+        # Escribe un TXT tabulado completo (solo para inicialización, use _write_tsv_headers + _append_tsv).
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
@@ -426,53 +438,64 @@ class OnpeExtractor:
         votos_read_path: Path,
         mesas_actualizadas: set[str],
     ) -> None:
-        # Escribe los datos acumulados hasta el punto de error de conexión.
+        # Escribe los datos acumulados hasta el punto de error de conexión, anexando solo registros nuevos.
         print("⚠ Perdida de conexión detectada. Guardando datos acumulados...", flush=True)
-        
-        # Escribe agrupaciones
-        self._write_tsv(
-            agrupaciones_path,
-            ["partido_id", "nombre"],
-            [[item.partido_id, item.nombre] for item in agrupaciones_unicas.values()],
-        )
-        
-        # Escribe mesas
+
+        agrupaciones_rows = [[item.partido_id, item.nombre] for item in agrupaciones_unicas.values()]
         mesas_rows_final = mesas_rows
+        votos_rows_final = votos_rows
+
         if append:
-            existentes = self._load_mesas_data_tsv(mesas_data_read_path)
-            for row in mesas_rows:
-                codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
-                if codigo_mesa:
-                    existentes[codigo_mesa] = row
-            mesas_rows_final = list(existentes.values())
-        
-        self._write_tsv(
+            agrupaciones_existentes = self._load_agrupaciones_tsv(agrupaciones_path)
+            agrupaciones_existentes_keys = set(agrupaciones_existentes.keys())
+            agrupaciones_rows = [
+                [item.partido_id, item.nombre]
+                for key, item in agrupaciones_unicas.items()
+                if key not in agrupaciones_existentes_keys
+            ]
+
+            mesas_existentes = self._load_mesas_data_tsv(mesas_data_read_path)
+            mesas_existentes_keys = set(mesas_existentes.keys())
+            mesas_rows_final = [
+                row
+                for row in mesas_rows
+                if self.normalize_mesa_code(self._text_value(row[0])) not in mesas_existentes_keys
+            ]
+
+            votos_existentes = self._load_votos_tsv(votos_read_path)
+            votos_existentes_keys = {
+                (
+                    self.normalize_mesa_code(self._text_value(row[0])),
+                    self._text_value(row[1]),
+                )
+                for row in votos_existentes
+                if len(row) >= 2
+            }
+            votos_rows_final = [
+                row
+                for row in votos_rows
+                if len(row) >= 2
+                and (
+                    self.normalize_mesa_code(self._text_value(row[0])),
+                    self._text_value(row[1]),
+                )
+                not in votos_existentes_keys
+            ]
+
+        # Anexa agrupaciones nuevas
+        self._append_tsv(
+            agrupaciones_path,
+            agrupaciones_rows,
+        )
+
+        # Anexa mesas nuevas
+        self._append_tsv(
             mesas_data_path,
-            [
-                "codigo_mesa",
-                "ubigeo",
-                "local_votacion",
-                "electores_habiles",
-                "votos_emitidos",
-                "votos_validos",
-                "blancos",
-                "nulos",
-                "impugnados",
-                "estado_acta",
-            ],
             mesas_rows_final,
         )
-        
-        # Escribe votos
+
+        # Anexa votos con deduplicación por mesa/partido
         votos_unicos: OrderedDict[tuple[str, str], list[str]] = OrderedDict()
-        votos_rows_final = votos_rows
-        if append:
-            votos_existentes = self._load_votos_tsv(votos_read_path)
-            votos_filtrados = [
-                row for row in votos_existentes if self.normalize_mesa_code(self._text_value(row[0])) not in mesas_actualizadas
-            ]
-            votos_rows_final = votos_filtrados + votos_rows
-        
         for row in votos_rows_final:
             if len(row) < 3:
                 continue
@@ -483,9 +506,8 @@ class OnpeExtractor:
             votos_unicos[(codigo_mesa, partido_id)] = [codigo_mesa, partido_id, self._text_value(row[2])]
         votos_rows_final = list(votos_unicos.values())
         
-        self._write_tsv(
+        self._append_tsv(
             votos_path,
-            ["codigo_mesa", "partido_id", "votos"],
             votos_rows_final,
         )
         
@@ -502,13 +524,35 @@ class OnpeExtractor:
         mesas_data_path = output_dir / "mesas_data.txt"
         votos_path = output_dir / "votos.txt"
 
+        # Crear encabezados si archivos no existen
+        self._write_tsv_headers(agrupaciones_path, ["partido_id", "nombre"])
+        self._write_tsv_headers(mesas_data_path, [
+            "codigo_mesa", "ubigeo", "local_votacion", "electores_habiles",
+            "votos_emitidos", "votos_validos", "blancos", "nulos", "impugnados", "estado_acta"
+        ])
+        self._write_tsv_headers(votos_path, ["codigo_mesa", "partido_id", "votos"])
+
         # Compatibilidad con salidas antiguas .tsv cuando se corre en modo append.
         agrupaciones_read_path = self._prefer_existing_path(agrupaciones_path, output_dir / "agrupaciones.tsv")
         mesas_data_read_path = self._prefer_existing_path(mesas_data_path, output_dir / "mesas_data.tsv")
         votos_read_path = self._prefer_existing_path(votos_path, output_dir / "votos.tsv")
 
+        agrupaciones_existentes = self._load_agrupaciones_tsv(agrupaciones_read_path) if append else OrderedDict()
+        mesas_existentes = self._load_mesas_data_tsv(mesas_data_read_path) if append else OrderedDict()
+        votos_existentes_rows = self._load_votos_tsv(votos_read_path) if append else []
+        agrupaciones_existentes_keys = set(agrupaciones_existentes.keys())
+        mesas_existentes_keys = set(mesas_existentes.keys())
+        votos_existentes_keys = {
+            (
+                self.normalize_mesa_code(self._text_value(row[0])),
+                self._text_value(row[1]),
+            )
+            for row in votos_existentes_rows
+            if len(row) >= 2
+        }
+
         agrupaciones_unicas: OrderedDict[str, AgrupacionData] = (
-            self._load_agrupaciones_tsv(agrupaciones_read_path) if append else OrderedDict()
+            agrupaciones_existentes if append else OrderedDict()
         )
         mesas_rows: list[list[str]] = []
         votos_rows: list[list[str]] = []
@@ -611,28 +655,6 @@ class OnpeExtractor:
             )
             raise SystemExit(1)
 
-        # Reescribe el catálogo consolidado de agrupaciones detectadas.
-        self._write_tsv(
-            agrupaciones_path,
-            ["partido_id", "nombre"],
-            [[item.partido_id, item.nombre] for item in agrupaciones_unicas.values()],
-        )
-        if append:
-            # En modo incremental, reemplaza solo las mesas actualizadas y conserva las demás.
-            existentes = self._load_mesas_data_tsv(mesas_data_read_path)
-            for row in mesas_rows:
-                codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
-                if codigo_mesa:
-                    existentes[codigo_mesa] = row
-            mesas_rows = list(existentes.values())
-
-            # Elimina votos antiguos de mesas reconsultadas y agrega el detalle nuevo.
-            votos_existentes = self._load_votos_tsv(votos_read_path)
-            votos_filtrados = [
-                row for row in votos_existentes if self.normalize_mesa_code(self._text_value(row[0])) not in mesas_actualizadas
-            ]
-            votos_rows = votos_filtrados + votos_rows
-
         # Evita acumulación histórica de duplicados por mesa/partido.
         votos_unicos: OrderedDict[tuple[str, str], list[str]] = OrderedDict()
         for row in votos_rows:
@@ -645,31 +667,59 @@ class OnpeExtractor:
             votos_unicos[(codigo_mesa, partido_id)] = [codigo_mesa, partido_id, self._text_value(row[2])]
         votos_rows = list(votos_unicos.values())
 
-        # Reescribe las tablas finales listas para análisis.
-        self._write_tsv(
-            mesas_data_path,
-            [
-                "codigo_mesa",
-                "ubigeo",
-                "local_votacion",
-                "electores_habiles",
-                "votos_emitidos",
-                "votos_validos",
-                "blancos",
-                "nulos",
-                "impugnados",
-                "estado_acta",
-            ],
-            mesas_rows,
+        agrupaciones_rows = [[item.partido_id, item.nombre] for item in agrupaciones_unicas.values()]
+        if append:
+            agrupaciones_rows = [
+                [item.partido_id, item.nombre]
+                for key, item in agrupaciones_unicas.items()
+                if key not in agrupaciones_existentes_keys
+            ]
+
+        mesas_rows_to_append = mesas_rows
+        if append:
+            mesas_rows_to_append = [
+                row
+                for row in mesas_rows
+                if self.normalize_mesa_code(self._text_value(row[0])) not in mesas_existentes_keys
+            ]
+
+        votos_rows_to_append = votos_rows
+        if append:
+            votos_rows_to_append = [
+                row
+                for row in votos_rows
+                if (
+                    self.normalize_mesa_code(self._text_value(row[0])),
+                    self._text_value(row[1]),
+                )
+                not in votos_existentes_keys
+            ]
+
+        # Siempre usar append: solo agregar datos nuevos, nunca sobrescribir
+        self._append_tsv(
+            agrupaciones_path,
+            agrupaciones_rows,
         )
-        self._write_tsv(
+        self._append_tsv(
+            mesas_data_path,
+            mesas_rows_to_append,
+        )
+        self._append_tsv(
             votos_path,
-            ["codigo_mesa", "partido_id", "votos"],
-            votos_rows,
+            votos_rows_to_append,
         )
 
         # Actualiza el archivo de pendientes a partir del estado final de las mesas consolidadas.
-        mesas_faltantes = self._write_mesas_faltantes(mesas_csv, mesas_rows)
+        mesas_consolidadas = mesas_rows
+        if append:
+            # Para pendientes, usar el estado más reciente de cada mesa aunque no se reescriba el histórico.
+            mesas_consolidadas_map = OrderedDict(mesas_existentes)
+            for row in mesas_rows:
+                codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
+                if codigo_mesa:
+                    mesas_consolidadas_map[codigo_mesa] = row
+            mesas_consolidadas = list(mesas_consolidadas_map.values())
+        mesas_faltantes = self._write_mesas_faltantes(mesas_csv, mesas_consolidadas)
 
         # Devuelve métricas resumidas de la corrida para imprimirlas en CLI.
         return {
@@ -677,6 +727,6 @@ class OnpeExtractor:
             "mesas_procesadas": mesas_procesadas,
             "mesas_sin_data": mesas_sin_data,
             "agrupaciones_unicas": len(agrupaciones_unicas),
-            "votos_registrados": len(votos_rows),
+            "votos_registrados": len(votos_rows_to_append),
             "mesas_faltantes": mesas_faltantes,
         }
