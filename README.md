@@ -29,7 +29,7 @@ Nota: esta data puede usarse para analiticas (Excel, Power BI u otras herramient
 erDiagram
 	MESAS_DATA ||--o{ VOTOS : codigo_mesa
 	AGRUPACIONES ||--o{ VOTOS : partido_id
-	CANDIDATO_MANUAL ||--o{ VOTOS : partido_id
+	CANDIDATO ||--o{ VOTOS : partido_id
 	UBIGEO_RENIEC ||--o{ MESAS_DATA : ubigeo
 
 	MESAS_DATA {
@@ -50,7 +50,7 @@ erDiagram
 		string nombre
 	}
 
-	CANDIDATO_MANUAL {
+	CANDIDATO {
 		string partido_id PK
 		string Candidato
 	}
@@ -78,11 +78,11 @@ Llaves y relaciones:
 - MESAS_DATA: PK codigo_mesa
 - AGRUPACIONES: PK partido_id
 - VOTOS: PK logica compuesta codigo_mesa + partido_id
-- CANDIDATO_MANUAL: PK partido_id
+- CANDIDATO: PK partido_id
 - UBIGEO_RENIEC: PK Ubigeo
 - MESAS_DATA (1) -> VOTOS (N) por codigo_mesa
 - AGRUPACIONES (1) -> VOTOS (N) por partido_id
-- CANDIDATO_MANUAL (1) -> VOTOS (N) por partido_id (mapeo manual)
+- CANDIDATO (1) -> VOTOS (N) por partido_id (mapeo manual)
 - UBIGEO_RENIEC (1) -> MESAS_DATA (N) por ubigeo
 
 ## Entradas
