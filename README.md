@@ -29,6 +29,7 @@ Nota: esta data puede usarse para analiticas (Excel, Power BI u otras herramient
 erDiagram
 	MESAS_DATA ||--o{ VOTOS : codigo_mesa
 	AGRUPACIONES ||--o{ VOTOS : partido_id
+	UBIGEO_RENIEC ||--o{ MESAS_DATA : ubigeo
 
 	MESAS_DATA {
 		string codigo_mesa PK
@@ -53,6 +54,17 @@ erDiagram
 		string partido_id FK
 		int votos
 	}
+
+	UBIGEO_RENIEC {
+		string Ubigeo PK
+		string Distrito
+		string Provincia
+		string Departamento
+		number Poblacion
+		number Superficie
+		number Y
+		number X
+	}
 ```
 
 Llaves y relaciones:
@@ -60,14 +72,23 @@ Llaves y relaciones:
 - MESAS_DATA: PK codigo_mesa
 - AGRUPACIONES: PK partido_id
 - VOTOS: PK logica compuesta codigo_mesa + partido_id
+- UBIGEO_RENIEC: PK Ubigeo
 - MESAS_DATA (1) -> VOTOS (N) por codigo_mesa
 - AGRUPACIONES (1) -> VOTOS (N) por partido_id
+- UBIGEO_RENIEC (1) -> MESAS_DATA (N) por ubigeo
 
 ## Entradas
 
 - `source_data/MesasFaltantes.txt`: lista operativa de mesas a consultar.
 - `source_data/todas_las_mesas.txt`: universo de referencia de mesas publicadas.
 - `source_data/candidato.txt`: catalogo manual opcional para enriquecimiento.
+- `source_data/geodir-ubigeo-reniec.xlsx`: dimension geografica por ubigeo para analisis territorial.
+
+Origen de ubigeo:
+
+- Fuente: Geodir (dataset RENIEC de ubigeos)
+- URL de referencia: https://account.geodir.co/resources/file/recursos/geodir-ubigeo-reniec.xlsx
+- En este repositorio se mantiene una copia local para cruces analiticos.
 
 ## Salidas
 
@@ -130,7 +151,8 @@ onpescraper/
 |-- source_data/
 |   |-- MesasFaltantes.txt
 |   |-- todas_las_mesas.txt
-|   \-- candidato.txt
+|   |-- candidato.txt
+|   \-- geodir-ubigeo-reniec.xlsx
 \-- src/
 	\-- onpe_scraper/
 		|-- __init__.py
