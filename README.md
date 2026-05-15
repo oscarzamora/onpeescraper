@@ -29,6 +29,7 @@ Nota: esta data puede usarse para analiticas (Excel, Power BI u otras herramient
 erDiagram
 	MESAS_DATA ||--o{ VOTOS : codigo_mesa
 	AGRUPACIONES ||--o{ VOTOS : partido_id
+	CANDIDATO_MANUAL ||--o{ VOTOS : partido_id
 	UBIGEO_RENIEC ||--o{ MESAS_DATA : ubigeo
 
 	MESAS_DATA {
@@ -47,6 +48,11 @@ erDiagram
 	AGRUPACIONES {
 		string partido_id PK
 		string nombre
+	}
+
+	CANDIDATO_MANUAL {
+		string partido_id PK
+		string Candidato
 	}
 
 	VOTOS {
@@ -72,9 +78,11 @@ Llaves y relaciones:
 - MESAS_DATA: PK codigo_mesa
 - AGRUPACIONES: PK partido_id
 - VOTOS: PK logica compuesta codigo_mesa + partido_id
+- CANDIDATO_MANUAL: PK partido_id
 - UBIGEO_RENIEC: PK Ubigeo
 - MESAS_DATA (1) -> VOTOS (N) por codigo_mesa
 - AGRUPACIONES (1) -> VOTOS (N) por partido_id
+- CANDIDATO_MANUAL (1) -> VOTOS (N) por partido_id (mapeo manual)
 - UBIGEO_RENIEC (1) -> MESAS_DATA (N) por ubigeo
 
 ## Entradas
@@ -89,6 +97,13 @@ Origen de ubigeo:
 - Fuente: Geodir (dataset RENIEC de ubigeos)
 - URL de referencia: https://account.geodir.co/resources/file/recursos/geodir-ubigeo-reniec.xlsx
 - En este repositorio se mantiene una copia local para cruces analiticos.
+
+Origen de candidato (mapeo manual):
+
+- Archivo: `source_data/candidato.txt`
+- Construccion: manual
+- Uso: enriquecer el modelo analitico con el nombre de candidato por `partido_id`.
+- Nota: no lo genera el scraper; su mantenimiento es manual.
 
 ## Salidas
 
