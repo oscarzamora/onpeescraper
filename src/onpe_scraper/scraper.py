@@ -438,7 +438,7 @@ class OnpeExtractor:
         votos_read_path: Path,
         mesas_actualizadas: set[str],
     ) -> None:
-        # Escribe los datos acumulados hasta el punto de error de conexión, anexando solo registros nuevos.
+        # Escribe los datos acumulados hasta el punto de error de conexión.
         print("⚠ Perdida de conexión detectada. Guardando datos acumulados...", flush=True)
 
         agrupaciones_rows = [[item.partido_id, item.nombre] for item in agrupaciones_unicas.values()]
@@ -488,10 +488,31 @@ class OnpeExtractor:
             agrupaciones_rows,
         )
 
-        # Anexa mesas nuevas
-        self._append_tsv(
+        # mesas_data se guarda por upsert para reflejar cambios de estado/conteo de mesas ya existentes.
+        mesas_rows_consolidadas = mesas_rows_final
+        if append:
+            mesas_consolidadas_map = OrderedDict(self._load_mesas_data_tsv(mesas_data_read_path))
+            for row in mesas_rows:
+                codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
+                if codigo_mesa:
+                    mesas_consolidadas_map[codigo_mesa] = row
+            mesas_rows_consolidadas = list(mesas_consolidadas_map.values())
+
+        self._write_tsv(
             mesas_data_path,
-            mesas_rows_final,
+            [
+                "codigo_mesa",
+                "ubigeo",
+                "local_votacion",
+                "electores_habiles",
+                "votos_emitidos",
+                "votos_validos",
+                "blancos",
+                "nulos",
+                "impugnados",
+                "estado_acta",
+            ],
+            mesas_rows_consolidadas,
         )
 
         # Anexa votos con deduplicación por mesa/partido
@@ -675,13 +696,15 @@ class OnpeExtractor:
                 if key not in agrupaciones_existentes_keys
             ]
 
-        mesas_rows_to_append = mesas_rows
+        # mesas_data va por upsert: si la mesa existe, se actualiza; si no existe, se inserta.
+        mesas_rows_consolidadas = mesas_rows
         if append:
-            mesas_rows_to_append = [
-                row
-                for row in mesas_rows
-                if self.normalize_mesa_code(self._text_value(row[0])) not in mesas_existentes_keys
-            ]
+            mesas_consolidadas_map = OrderedDict(mesas_existentes)
+            for row in mesas_rows:
+                codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
+                if codigo_mesa:
+                    mesas_consolidadas_map[codigo_mesa] = row
+            mesas_rows_consolidadas = list(mesas_consolidadas_map.values())
 
         votos_rows_to_append = votos_rows
         if append:
@@ -700,9 +723,21 @@ class OnpeExtractor:
             agrupaciones_path,
             agrupaciones_rows,
         )
-        self._append_tsv(
+        self._write_tsv(
             mesas_data_path,
-            mesas_rows_to_append,
+            [
+                "codigo_mesa",
+                "ubigeo",
+                "local_votacion",
+                "electores_habiles",
+                "votos_emitidos",
+                "votos_validos",
+                "blancos",
+                "nulos",
+                "impugnados",
+                "estado_acta",
+            ],
+            mesas_rows_consolidadas,
         )
         self._append_tsv(
             votos_path,
@@ -710,16 +745,7 @@ class OnpeExtractor:
         )
 
         # Actualiza el archivo de pendientes a partir del estado final de las mesas consolidadas.
-        mesas_consolidadas = mesas_rows
-        if append:
-            # Para pendientes, usar el estado más reciente de cada mesa aunque no se reescriba el histórico.
-            mesas_consolidadas_map = OrderedDict(mesas_existentes)
-            for row in mesas_rows:
-                codigo_mesa = self.normalize_mesa_code(self._text_value(row[0]))
-                if codigo_mesa:
-                    mesas_consolidadas_map[codigo_mesa] = row
-            mesas_consolidadas = list(mesas_consolidadas_map.values())
-        mesas_faltantes = self._write_mesas_faltantes(mesas_csv, mesas_consolidadas)
+        mesas_faltantes = self._write_mesas_faltantes(mesas_csv, mesas_rows_consolidadas)
 
         # Devuelve métricas resumidas de la corrida para imprimirlas en CLI.
         return {
