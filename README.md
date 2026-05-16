@@ -110,8 +110,37 @@ Origen de candidato (mapeo manual):
 - `output/mesas_data.txt`: cabecera por mesa.
 - `output/votos.txt`: detalle por mesa y agrupacion.
 - `output/agrupaciones.txt`: catalogo de agrupaciones detectadas.
+- `output/ubigeo_extranjero.txt`: catálogo base de exterior con columnas `ubigeo`, `Continente`, `pais`, `ciudad`.
+- `output/ubigeo_extranjero_lat_lon.txt`: catálogo de exterior con `ubigeo`, `lat`, `lon` para georreferenciación fuera del Perú.
 
-Los archivos en `output/` estan listos para uso analitico directo en Excel, Power BI, SQL o notebooks, sin transformaciones complejas adicionales.
+Importante:
+
+- Los archivos de extranjero son `output/ubigeo_extranjero.txt` y `output/ubigeo_extranjero_lat_lon.txt`.
+- Estos dos archivos son solo para el ámbito de extranjero.
+- Su finalidad es enriquecer el análisis donde no aplica la malla de ubigeo RENIEC fuera del Perú.
+- No reemplazan la dimensión RENIEC nacional; la complementan para cruces por ciudad en el exterior.
+
+Los archivos en `output/` están listos para uso analítico directo en Excel, Power BI, SQL o notebooks, sin transformaciones complejas adicionales.
+
+## Archivos para analítica (links directos)
+
+### Core ONPE (Peru)
+
+- [output/mesas_data.txt](output/mesas_data.txt)
+- [output/votos.txt](output/votos.txt)
+- [output/agrupaciones.txt](output/agrupaciones.txt)
+- [source_data/candidato.txt](source_data/candidato.txt)
+- [source_data/geodir-ubigeo-reniec.xlsx](source_data/geodir-ubigeo-reniec.xlsx)
+
+### Extensión exterior (opcional)
+
+- [output/ubigeo_extranjero.txt](output/ubigeo_extranjero.txt)
+- [output/ubigeo_extranjero_lat_lon.txt](output/ubigeo_extranjero_lat_lon.txt)
+
+### Operación y trazabilidad
+
+- [source_data/todas_las_mesas.txt](source_data/todas_las_mesas.txt)
+- [source_data/MesasFaltantes.txt](source_data/MesasFaltantes.txt)
 
 ## Requisitos
 
@@ -139,6 +168,46 @@ pip install -e .
 python -m onpe_scraper --input source_data/MesasFaltantes.txt --output-dir output --append
 ```
 
+## Scripts adicionales opcionales (exterior)
+
+Estos scripts quedan en este repositorio porque corresponden a extracción y enriquecimiento base de geografía exterior.
+
+### 1) Exportar ubigeo exterior (opcional)
+
+```bash
+python scripts/onpe_extranjero_export.py
+```
+
+Salida por defecto:
+
+- `output/ubigeo_extranjero.txt`
+
+Qué hace:
+
+- Construye el catálogo de ciudades de votación en el extranjero.
+- Estandariza a nivel `ubigeo` para posteriores cruces analíticos.
+
+### 2) Geocodificar latitud/longitud exterior (opcional)
+
+```bash
+python scripts/extranjero_latlon.py
+```
+
+Salida por defecto:
+
+- `output/ubigeo_extranjero_lat_lon.txt`
+
+Qué hace:
+
+- Cruza `ubigeo_extranjero.txt` con `mesas_data.txt` para usar `local_votacion` cuando existe.
+- Aplica búsqueda geocodificada con fallback (`local, ciudad, pais` -> `pais, ciudad` -> `ciudad, pais`).
+- Entrega coordenadas por `ubigeo` para expansión analítica a nivel ciudad fuera del Perú.
+
+Estado actual:
+
+- Ambos scripts opcionales ya fueron ejecutados en este repositorio.
+- Los resultados vigentes están en `output/ubigeo_extranjero.txt` y `output/ubigeo_extranjero_lat_lon.txt`.
+
 ## Comportamiento de actualizacion
 
 - Se trabaja en modo incremental (`--append`).
@@ -163,7 +232,12 @@ onpescraper/
 |-- output/
 |   |-- agrupaciones.txt
 |   |-- mesas_data.txt
+|   |-- ubigeo_extranjero.txt
+|   |-- ubigeo_extranjero_lat_lon.txt
 |   \-- votos.txt
+|-- scripts/
+|   |-- onpe_extranjero_export.py
+|   \-- extranjero_latlon.py
 |-- source_data/
 |   |-- MesasFaltantes.txt
 |   |-- todas_las_mesas.txt
