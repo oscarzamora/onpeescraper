@@ -148,7 +148,7 @@ class OnpeExtractor:
         return self._fetch_mesa_requests(codigo_mesa)
 
     def extract_acta(self, payload: dict[str, Any] | None) -> dict[str, Any] | None:
-        # Selecciona únicamente la acta correspondiente a la elección configurada.
+        # Prioriza la elección configurada; si no está contabilizada, usa una acta contabilizada disponible.
         if not payload:
             return None
 
@@ -156,8 +156,29 @@ class OnpeExtractor:
         if not isinstance(data, list):
             return None
 
+        selected: dict[str, Any] | None = None
         for acta in data:
             if isinstance(acta, dict) and acta.get("idEleccion") == self.id_eleccion:
+                selected = acta
+                break
+
+        if selected is not None:
+            estado = self._text_value(selected.get("descripcionEstadoActa")).casefold()
+            if estado == "contabilizada":
+                return selected
+
+        for acta in data:
+            if not isinstance(acta, dict):
+                continue
+            estado = self._text_value(acta.get("descripcionEstadoActa")).casefold()
+            if estado == "contabilizada":
+                return acta
+
+        if selected is not None:
+            return selected
+
+        for acta in data:
+            if isinstance(acta, dict):
                 return acta
 
         return None

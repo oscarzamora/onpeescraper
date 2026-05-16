@@ -148,7 +148,8 @@ python -m onpe_scraper --input source_data/MesasFaltantes.txt --output-dir outpu
 
 ## Supuesto tecnico vigente
 
-El scraper consulta `/actas/buscar/mesa` y selecciona la acta presidencial con `idEleccion = 10`.
+El scraper consulta `/actas/buscar/mesa` y prioriza la acta de `idEleccion = 10`.
+Si esa acta no esta `Contabilizada`, usa como respaldo una acta `Contabilizada` disponible para la misma mesa.
 Si ONPE cambia estructura o endpoint, este supuesto debe validarse y documentarse.
 
 ## Estructura de este repositorio
